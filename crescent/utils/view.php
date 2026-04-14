@@ -1,6 +1,6 @@
 <?php
 
-namespace Crescent\Utils;
+namespace Crescent\Utils {
 
 /**
  * View — helpers de template disponíveis em todas as views e componentes.
@@ -108,6 +108,10 @@ class View
     }
 }
 
+} // end namespace Crescent\Utils
+
+namespace {
+
 // ─── Helpers globais ──────────────────────────────────────────────────────────
 // Registrados apenas uma vez; disponíveis em qualquer view/componente.
 
@@ -154,3 +158,5 @@ if (!function_exists('asset')) {
         return $base . '/' . ltrim($path, '/');
     }
 }
+
+} // end namespace global
