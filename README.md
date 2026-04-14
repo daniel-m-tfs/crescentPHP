@@ -11,7 +11,7 @@ Inspirado no [Crescent Framework](https://crescent.tyne.com.br) (Lua).
 
 ```bash
 # 1. Clone o template
-git clone https://github.com/<seu-usuario>/CrescentPHP meu-projeto
+git clone https://github.com/daniel-m-tfs/crescentPHP meu-projeto
 cd meu-projeto
 
 # 2. Configure o ambiente
