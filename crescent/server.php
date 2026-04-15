@@ -118,7 +118,15 @@ class App
         $match = $this->router->match($request->method, $request->path);
 
         if ($match === null) {
-            $response->json(['error' => 'Rota não encontrada'], 404);
+            $accept = $_SERVER['HTTP_ACCEPT'] ?? '';
+            $isApi  = str_starts_with($request->path, '/api/')
+                   || (str_contains($accept, 'application/json') && !str_contains($accept, 'text/html'));
+            if ($isApi) {
+                $response->json(['error' => 'Rota não encontrada'], 404);
+            } else {
+                http_response_code(404);
+                include APP_ROOT . '/src/shared/views/404.php';
+            }
             return;
         }
 

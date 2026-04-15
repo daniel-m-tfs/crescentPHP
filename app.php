@@ -51,7 +51,6 @@ $app->get('/', function ($ctx) {
 // Exemplo: require __DIR__ . '/src/users/routes/usersRoutes.php';
 
 require __DIR__ . '/src/users/routes/usersRoutes.php';
-require __DIR__ . '/src/tasks/routes/tasksRoutes.php';
 require __DIR__ . '/src/auth/init.php';
 
 // ─── Start ────────────────────────────────────────────────────────────────────
