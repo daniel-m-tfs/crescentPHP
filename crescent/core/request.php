@@ -124,11 +124,26 @@ class Request
 
     private function resolveIp(): string
     {
-        foreach (['HTTP_X_FORWARDED_FOR', 'HTTP_X_REAL_IP', 'REMOTE_ADDR'] as $key) {
-            if (!empty($_SERVER[$key])) {
-                return explode(',', $_SERVER[$key])[0];
+        // Só confia em X-Forwarded-For / X-Real-IP se TRUSTED_PROXY estiver
+        // configurado no .env. Sem essa variável o header pode ser forjado
+        // pelo cliente e enganar o rate limiter.
+        $trustedProxy = \Crescent\Utils\Env::get('TRUSTED_PROXY', '');
+
+        if ($trustedProxy) {
+            $remoteAddr = $_SERVER['REMOTE_ADDR'] ?? '';
+
+            // Verifica se a requisição vem do proxy confiável configurado
+            if ($remoteAddr === $trustedProxy || str_starts_with($remoteAddr, $trustedProxy)) {
+                if (!empty($_SERVER['HTTP_X_FORWARDED_FOR'])) {
+                    // X-Forwarded-For pode conter lista; o IP real é o primeiro
+                    return trim(explode(',', $_SERVER['HTTP_X_FORWARDED_FOR'])[0]);
+                }
+                if (!empty($_SERVER['HTTP_X_REAL_IP'])) {
+                    return trim($_SERVER['HTTP_X_REAL_IP']);
+                }
             }
         }
-        return '127.0.0.1';
+
+        return $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
     }
 }

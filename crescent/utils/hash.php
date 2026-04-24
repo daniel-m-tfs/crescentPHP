@@ -3,7 +3,13 @@
 namespace Crescent\Utils;
 
 /**
- * Hashing seguro de senhas usando PBKDF2 (SHA-256).
+ * Hashing seguro de senhas usando Argon2id (PHP 7.3+).
+ *
+ * Argon2id é o algoritmo recomendado pelo OWASP por ter resistência
+ * contra ataques de GPU (memória intensiva) e side-channel.
+ *
+ * Hashes PBKDF2 legados são verificados via fallback e re-hasheados
+ * na próxima autenticação (handled em UserModel::updateUser).
  *
  * Uso:
  *   $hash = Hash::make('senha123');
@@ -12,74 +18,63 @@ namespace Crescent\Utils;
  */
 class Hash
 {
-    private const ALGO       = 'sha256';
-    private const ITERATIONS = 100_000;
-    private const KEY_LEN    = 32;
-    private const SALT_LEN   = 16;
-    private const VERSION    = 1;
+    // Argon2id — parâmetros mínimos OWASP (memória, iterações, threads)
+    private const ARGON_OPTIONS = [
+        'memory_cost' => 65536,  // 64 MB
+        'time_cost'   => 4,
+        'threads'     => 2,
+    ];
+
+    // Mantido apenas para verificar hashes PBKDF2 legados
+    private const PBKDF2_ALGO       = 'sha256';
+    private const PBKDF2_ITERATIONS = 100_000;
+    private const PBKDF2_KEY_LEN    = 32;
 
     /**
-     * Gera o hash de uma senha.
-     *
-     * Formato armazenado:
-     *   $pbkdf2$v=1$algo=sha256$iter=100000$<salt_hex>$<hash_hex>
+     * Gera o hash de uma senha com Argon2id.
      */
     public static function make(string $password): string
     {
-        $salt = random_bytes(self::SALT_LEN);
-        $raw  = hash_pbkdf2(self::ALGO, $password, $salt, self::ITERATIONS, self::KEY_LEN, true);
-
-        return implode('$', [
-            '',
-            'pbkdf2',
-            'v=' . self::VERSION,
-            'algo=' . self::ALGO,
-            'iter=' . self::ITERATIONS,
-            bin2hex($salt),
-            bin2hex($raw),
-        ]);
+        return password_hash($password, PASSWORD_ARGON2ID, self::ARGON_OPTIONS);
     }
 
     /**
      * Verifica se a senha corresponde ao hash armazenado.
+     * Suporta Argon2id (novo) e PBKDF2 (legado).
      * Usa comparação em tempo constante para evitar timing attacks.
      */
     public static function verify(string $password, string $hash): bool
     {
-        $parts = explode('$', $hash);
-
-        // Formato: ['', 'pbkdf2', 'v=1', 'algo=sha256', 'iter=100000', salt, hash]
-        if (count($parts) !== 7 || $parts[1] !== 'pbkdf2') {
-            // Fallback: tenta password_verify para hashes bcrypt legados
+        // Argon2id / bcrypt / qualquer formato reconhecido pelo PHP
+        if (str_starts_with($hash, '$argon') || str_starts_with($hash, '$2y')) {
             return password_verify($password, $hash);
         }
 
-        $algo       = explode('=', $parts[3])[1];
-        $iterations = (int) explode('=', $parts[4])[1];
-        $salt       = hex2bin($parts[5]);
-        $storedHash = $parts[6];
+        // Fallback: PBKDF2 legado ($pbkdf2$v=1$...)
+        $parts = explode('$', $hash);
+        if (count($parts) === 7 && $parts[1] === 'pbkdf2') {
+            $algo       = explode('=', $parts[3])[1];
+            $iterations = (int) explode('=', $parts[4])[1];
+            $salt       = hex2bin($parts[5]);
+            $storedHash = $parts[6];
+            $computed   = bin2hex(hash_pbkdf2($algo, $password, $salt, $iterations, self::PBKDF2_KEY_LEN, true));
+            return hash_equals($storedHash, $computed);
+        }
 
-        $computed = bin2hex(hash_pbkdf2($algo, $password, $salt, $iterations, self::KEY_LEN, true));
-
-        return hash_equals($storedHash, $computed);
+        return false;
     }
 
     /**
-     * Indica se o hash foi gerado com parâmetros desatualizados
-     * e precisa ser regenerado.
+     * Indica se o hash precisa ser regenerado (algoritmo ou custo desatualizado).
      */
     public static function needsRehash(string $hash): bool
     {
-        $parts = explode('$', $hash);
-
-        if (count($parts) !== 7 || $parts[1] !== 'pbkdf2') {
+        // Hash PBKDF2 legado → precisa migrar para Argon2id
+        if (str_starts_with($hash, '$pbkdf2') || str_contains($hash, 'pbkdf2')) {
             return true;
         }
 
-        $iterations = (int) explode('=', $parts[4])[1];
-        $algo       = explode('=', $parts[3])[1];
-
-        return $iterations < self::ITERATIONS || $algo !== self::ALGO;
+        return password_needs_rehash($hash, PASSWORD_ARGON2ID, self::ARGON_OPTIONS);
     }
 
     /**
@@ -97,9 +92,9 @@ class Hash
      */
     public static function uuid(): string
     {
-        $data = random_bytes(16);
-        $data[6] = chr(ord($data[6]) & 0x0f | 0x40); // versão 4
-        $data[8] = chr(ord($data[8]) & 0x3f | 0x80); // variante RFC 4122
+        $data    = random_bytes(16);
+        $data[6] = chr(ord($data[6]) & 0x0f | 0x40);
+        $data[8] = chr(ord($data[8]) & 0x3f | 0x80);
 
         return vsprintf('%s%s-%s-%s-%s-%s%s%s', str_split(bin2hex($data), 4));
     }

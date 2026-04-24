@@ -102,20 +102,35 @@ class Security
 
         $data = ['count' => 0, 'reset' => $now + $window];
 
-        if (file_exists($file)) {
-            $content = file_get_contents($file);
-            if ($content) {
-                $data = json_decode($content, true) ?? $data;
+        // Abre (ou cria) o arquivo com lock exclusivo para evitar TOCTOU.
+        // LOCK_EX garante que leitura e escrita sejam atômicas sob concorrência.
+        $fp = fopen($file, 'c+');
+        if (!$fp) {
+            return false; // Falha silenciosa: não bloqueia a requisição
+        }
+
+        flock($fp, LOCK_EX);
+
+        $content = stream_get_contents($fp);
+        if ($content) {
+            $parsed = json_decode($content, true);
+            if (is_array($parsed)) {
+                $data = $parsed;
             }
         }
 
-        // Janela expirou
         if ($now >= $data['reset']) {
             $data = ['count' => 0, 'reset' => $now + $window];
         }
 
         $data['count']++;
-        file_put_contents($file, json_encode($data), LOCK_EX);
+
+        ftruncate($fp, 0);
+        rewind($fp);
+        fwrite($fp, json_encode($data));
+        fflush($fp);
+        flock($fp, LOCK_UN);
+        fclose($fp);
 
         return $data['count'] > $limit;
     }
